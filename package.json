@@ -1,0 +1,17 @@
+{
+  "name": "social-media-manager-mvp",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:api": "npm --workspace apps/api run build",
+    "build:web": "npm --workspace apps/web run build"
+  },
+  "dependencies": {
+    "lodash": "^4.18.1"
+  }
+}

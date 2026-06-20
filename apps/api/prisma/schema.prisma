@@ -1,0 +1,330 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  TWITTER
+  TIKTOK
+}
+
+enum AccountStatus {
+  CONNECTED
+  EXPIRED
+  DISCONNECTED
+  ERROR
+}
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum ScheduleStatus {
+  QUEUED
+  PUBLISHING
+  PUBLISHED
+  PARTIALLY_FAILED
+  FAILED
+  CANCELLED
+}
+
+enum PublishStatus {
+  DRAFT
+  QUEUED
+  VALIDATED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  RATE_DELAYED
+}
+
+enum PublishJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  RATE_DELAYED
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(ADMIN)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  workspaces   Workspace[] @relation("WorkspaceOwner")
+  auditLogs    AuditLog[]
+}
+
+model Workspace {
+  id             String           @id @default(uuid())
+  name           String
+  ownerId        String
+  owner          User             @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  socialAccounts SocialAccount[]
+  contentItems   ContentItem[]
+  scheduledPosts ScheduledPost[]
+  mediaAssets    MediaAsset[]
+  auditLogs      AuditLog[]
+  publishingQueues PublishingQueue[]
+}
+
+model SocialAccount {
+  id                    String        @id @default(uuid())
+  workspaceId           String
+  workspace             Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  platform              Platform
+  accountName           String
+  platformAccountId     String
+  avatarUrl             String?
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]      @default([])
+  status                AccountStatus @default(CONNECTED)
+  lastSyncAt            DateTime?
+  lastQuotaUsed         Int           @default(0)
+  lastQuotaMax          Int           @default(0)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  variants              PlatformPostVariant[]
+  followerSnapshots     FollowerSnapshot[]
+  inboxConversations    InboxConversation[]
+
+  @@index([workspaceId, platform])
+}
+
+model ContentItem {
+  id             String           @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  cmsContentId   String?
+  title          String
+  body           String
+  mediaAssets    Json             @default("[]")
+  hashtags       String[]         @default([])
+  linkUrl        String?
+  approvalStatus ApprovalStatus   @default(DRAFT)
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  scheduledPosts ScheduledPost[]
+  queuedContents QueuedContent[]
+
+  @@index([workspaceId, approvalStatus])
+}
+
+model MediaAsset {
+  id          String   @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  url         String
+  filename    String
+  mimeType    String
+  sizeBytes   Int
+  kind        String
+  storage     String   @default("local")
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, kind])
+}
+
+model ScheduledPost {
+  id             String                @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contentItemId  String
+  contentItem    ContentItem           @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  scheduledTime  DateTime
+  timezone       String                @default("UTC")
+  status         ScheduleStatus        @default(QUEUED)
+  createdBy      String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  variants       PlatformPostVariant[]
+
+  @@index([workspaceId, scheduledTime])
+}
+
+model PlatformPostVariant {
+  id                String              @id @default(uuid())
+  scheduledPostId   String
+  scheduledPost     ScheduledPost       @relation(fields: [scheduledPostId], references: [id], onDelete: Cascade)
+  platform          Platform
+  socialAccountId   String
+  socialAccount     SocialAccount       @relation(fields: [socialAccountId], references: [id])
+  caption           String
+  hashtags          String[]            @default([])
+  linkUrl           String?
+  mediaAssets       Json                @default("[]")
+  validationStatus  String              @default("PENDING")
+  publishStatus     PublishStatus       @default(QUEUED)
+  bullJobId         String?
+  jobStatus         PublishJobStatus     @default(PENDING)
+  rateDelayedUntil  DateTime?
+  platformPostId    String?
+  platformPostUrl   String?
+  errorMessage      String?
+  publishedAt       DateTime?
+  attemptedAt       DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  analyticsSnapshots AnalyticsSnapshot[]
+
+  @@index([scheduledPostId, platform])
+  @@index([platformPostId])
+  @@index([jobStatus])
+}
+
+model AnalyticsSnapshot {
+  id                    String              @id @default(uuid())
+  platformPostVariantId String
+  platformPostVariant   PlatformPostVariant @relation(fields: [platformPostVariantId], references: [id], onDelete: Cascade)
+  platform              Platform
+  reach                 Int                 @default(0)
+  impressions           Int                 @default(0)
+  engagement            Int                 @default(0)
+  likes                 Int                 @default(0)
+  comments              Int                 @default(0)
+  shares                Int                 @default(0)
+  saves                 Int                 @default(0)
+  clicks                Int                 @default(0)
+  followerCount         Int                 @default(0)
+  engagementRate        Float               @default(0)
+  collectedAt           DateTime            @default(now())
+
+  @@index([platformPostVariantId, collectedAt])
+  @@index([platform, collectedAt])
+}
+
+model FollowerSnapshot {
+  id              String        @id @default(uuid())
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform        Platform
+  followerCount   Int
+  collectedAt     DateTime      @default(now())
+
+  @@index([socialAccountId, collectedAt])
+  @@index([platform, collectedAt])
+}
+
+model ReportExport {
+  id          String   @id @default(uuid())
+  workspaceId String
+  type        String
+  filters     Json
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  metadata    Json      @default("{}")
+  createdAt   DateTime  @default(now())
+}
+
+// -- Social Inbox Models --
+
+model InboxContact {
+  id              String              @id @default(uuid())
+  workspaceId     String
+  platform        Platform
+  platformUserId  String
+  name            String
+  avatarUrl       String?
+  conversations   InboxConversation[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([workspaceId, platform, platformUserId])
+}
+
+model InboxConversation {
+  id              String         @id @default(uuid())
+  workspaceId     String
+  socialAccountId String
+  socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  contactId       String
+  contact         InboxContact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status          String         @default("OPEN")
+  messages        InboxMessage[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([workspaceId, status])
+}
+
+model InboxMessage {
+  id               String            @id @default(uuid())
+  conversationId   String
+  conversation     InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction        String            // "INBOUND" or "OUTBOUND"
+  content          String
+  platformMessageId String?
+  attachments      Json              @default("[]")
+  createdAt        DateTime          @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// -- Advanced Scheduling Models --
+
+model PublishingQueue {
+  id             String         @id @default(uuid())
+  workspaceId    String
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name           String
+  timeSlots      TimeSlot[]
+  queuedContents QueuedContent[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model TimeSlot {
+  id               String          @id @default(uuid())
+  queueId          String
+  queue            PublishingQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  dayOfWeek        Int             // 0-6
+  timeOfDay        String          // "HH:mm" format
+  createdAt        DateTime        @default(now())
+}
+
+model QueuedContent {
+  id             String          @id @default(uuid())
+  queueId        String
+  queue          PublishingQueue @relation(fields: [queueId], references: [id], onDelete: Cascade)
+  contentItemId  String
+  contentItem    ContentItem     @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  isEvergreen    Boolean         @default(false)
+  status         String          @default("QUEUED")
+  lastPublishedAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
