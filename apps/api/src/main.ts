@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
-import { mkdirSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -16,6 +16,27 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
   app.useStaticAssets(uploadDir, { prefix: '/uploads/' });
+
+  // Production: serve the built React UI from the same origin so the
+  // subdomain can host UI + API through one NestJS process.
+  // Gated on WEB_DIST_PATH so local dev is unaffected.
+  const webDistPath = process.env.WEB_DIST_PATH;
+  if (webDistPath && existsSync(webDistPath)) {
+    app.useStaticAssets(webDistPath);
+    const expressInstance = app.getHttpAdapter().getInstance() as any;
+    expressInstance.use((req: any, res: any, next: any) => {
+      if (req.method !== 'GET') return next();
+      if (
+        req.path.startsWith('/api') ||
+        req.path.startsWith('/uploads') ||
+        req.path.startsWith('/docs')
+      ) {
+        return next();
+      }
+      res.sendFile(join(webDistPath, 'index.html'));
+    });
+  }
+
   app.enableCors({
     origin: [webBaseUrl, 'http://localhost:5173', 'http://localhost:4173'],
     credentials: true,
