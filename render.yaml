@@ -1,0 +1,56 @@
+services:
+  # 1. NestJS API (Web Service)
+  - type: web
+    name: smm-api
+    env: node
+    # Build from the root of the monorepo so workspaces resolve correctly
+    buildCommand: npm ci && npm run build:api
+    # Start command inside the api workspace
+    startCommand: cd apps/api && npm run prisma:generate && npm run prisma:migrate && npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smm-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: smm-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+
+  # 2. BullMQ Background Worker (Worker Service)
+  - type: worker
+    name: smm-worker
+    env: node
+    buildCommand: npm ci && npm run build:api
+    startCommand: cd apps/api && npm run worker:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smm-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: smm-redis
+          property: connectionString
+
+databases:
+  # 3. PostgreSQL Database
+  - name: smm-postgres
+    databaseName: smm
+    user: smm_user
+    plan: free # Change to a paid plan for production
+
+  # 4. Redis Database (for BullMQ)
+  - type: redis
+    name: smm-redis
+    plan: free # Change to a paid plan for production
