@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { InboxGateway } from './inbox.gateway';
 import { Platform } from '@prisma/client';
@@ -69,6 +69,12 @@ export class InboxService {
         platformMessageId: payload.messageId || Date.now().toString(),
       }
     });
+    
+    // Update conversation updatedAt
+    await this.prisma.inboxConversation.update({
+      where: { id: conversation.id },
+      data: { updatedAt: new Date() },
+    });
 
     // Broadcast to connected clients
     this.gateway.broadcastNewMessage(workspaceId, {
@@ -77,5 +83,63 @@ export class InboxService {
     });
 
     return { success: true };
+  }
+
+  async getConversations(workspaceId: string) {
+    return this.prisma.inboxConversation.findMany({
+      where: { workspaceId },
+      include: {
+        contact: true,
+        socialAccount: true,
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async getMessages(conversationId: string) {
+    return this.prisma.inboxMessage.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async replyToConversation(workspaceId: string, conversationId: string, content: string) {
+    const conversation = await this.prisma.inboxConversation.findUnique({
+      where: { id: conversationId },
+    });
+
+    if (!conversation || conversation.workspaceId !== workspaceId) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const message = await this.prisma.inboxMessage.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'OUTBOUND',
+        content,
+        platformMessageId: `outbound-${Date.now()}`,
+      }
+    });
+
+    // Update conversation updatedAt
+    await this.prisma.inboxConversation.update({
+      where: { id: conversation.id },
+      data: { updatedAt: new Date() },
+    });
+
+    // Broadcast to connected clients so UI updates instantly
+    this.gateway.broadcastNewMessage(workspaceId, {
+      conversationId: conversation.id,
+      message,
+    });
+
+    // Here we would normally call the Platform API to actually send the message to Facebook/Instagram.
+    this.logger.log(`Mock sent message to platform for conversation ${conversationId}`);
+
+    return message;
   }
 }

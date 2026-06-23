@@ -5,12 +5,15 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ContentPage } from './pages/ContentPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { InboxPage } from './pages/InboxPage';
+import { MessageSquare } from 'lucide-react';
 import { api } from './lib/api';
 
-type Page = 'analytics' | 'accounts' | 'content' | 'calendar' | 'reports';
+type Page = 'analytics' | 'inbox' | 'accounts' | 'content' | 'calendar' | 'reports';
 
 const nav = [
   { key: 'analytics' as Page, label: 'Dashboard', icon: BarChart3 },
+  { key: 'inbox' as Page, label: 'Inbox', icon: MessageSquare },
   { key: 'accounts' as Page, label: 'Accounts', icon: Link2 },
   { key: 'content' as Page, label: 'Content', icon: Newspaper },
   { key: 'calendar' as Page, label: 'Calendar', icon: CalendarDays },
@@ -88,6 +91,7 @@ export default function App() {
           <div className="pill">Hybrid mock publishing mode</div>
         </header>
         {page === 'analytics' && <AnalyticsPage />}
+        {page === 'inbox' && <InboxPage />}
         {page === 'accounts' && <AccountsPage />}
         {page === 'content' && <ContentPage />}
         {page === 'calendar' && <CalendarPage />}
