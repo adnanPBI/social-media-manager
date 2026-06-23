@@ -1,0 +1,76 @@
+name: Build and Deploy to cPanel
+
+on:
+  push:
+    branches:
+      - main # Automatically deploy when code is pushed to the main branch
+  workflow_dispatch: # Allow manual triggering from the Actions tab
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Match this to your cPanel Node.js version
+          cache: 'npm'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      - name: Build Backend API (NestJS)
+        run: npm run build:api
+
+      - name: Build Frontend Web (Vite/React)
+        run: npm run build:web
+
+      # --- Deploy API to cPanel ---
+      - name: Deploy API via SSH/Rsync
+        uses: easingthemes/ssh-deploy@main
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_KEY }}
+          ARGS: "-avzr --delete"
+          SOURCE: "apps/api/dist/ apps/api/package.json apps/api/prisma/"
+          REMOTE_HOST: ${{ secrets.CPANEL_HOST }}
+          REMOTE_USER: ${{ secrets.CPANEL_USERNAME }}
+          TARGET: "/home/${{ secrets.CPANEL_USERNAME }}/smm-build/api/"
+
+      # --- Deploy Web UI to public_html ---
+      - name: Deploy Web Frontend to public_html
+        uses: easingthemes/ssh-deploy@main
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_KEY }}
+          ARGS: "-avzr --delete"
+          SOURCE: "apps/web/dist/"
+          REMOTE_HOST: ${{ secrets.CPANEL_HOST }}
+          REMOTE_USER: ${{ secrets.CPANEL_USERNAME }}
+          # Assuming you want the frontend available at your root domain
+          TARGET: "/home/${{ secrets.CPANEL_USERNAME }}/public_html/"
+
+      # --- Install Prod Dependencies on cPanel ---
+      - name: Execute Post-Deploy Script on cPanel
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.CPANEL_HOST }}
+          username: ${{ secrets.CPANEL_USERNAME }}
+          key: ${{ secrets.CPANEL_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.CPANEL_USERNAME }}/smm-build/api
+            
+            # Setup pure production npm environment
+            printf "bin-links=true\nworkspaces=false\nfund=false\naudit=false\n" > .npmrc
+            
+            # Install only production dependencies (skipping @nestjs/cli completely)
+            npm install --omit=dev --legacy-peer-deps
+            
+            # (Optional) Generate prisma client on the server
+            npx prisma generate
+            
+            # Restart the cPanel Node.js passenger app
+            mkdir -p tmp
+            touch tmp/restart.txt
